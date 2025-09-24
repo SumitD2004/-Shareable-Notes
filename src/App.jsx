@@ -55,18 +55,23 @@ async function decryptString(encrypted, password) {
   return dec.decode(plainBuf)
 }
 
+// Env-configurable endpoints and models
+const OPENAI_API_BASE = import.meta?.env?.VITE_OPENAI_API_BASE || 'https://api.openai.com/v1'
+const OPENAI_MODEL = import.meta?.env?.VITE_OPENAI_MODEL || 'gpt-4o-mini'
+const LT_API_URL = import.meta?.env?.VITE_LT_API_URL || 'https://api.languagetool.org/v2'
+
 // AI helpers (OpenAI optional; fallback heuristics)
 async function callOpenAI(prompt, apiKey) {
-  if (!apiKey) return null
-  try {
-    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+  if(!apiKey) return null
+  try{
+    const res = await fetch(`${OPENAI_API_BASE}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
+        model: OPENAI_MODEL,
         messages: [
           { role: 'system', content: 'You are a helpful assistant for a notes app.' },
           { role: 'user', content: prompt }
@@ -91,10 +96,10 @@ function heuristicTags(text) {
   return words.slice(0, 5)
 }
 
-// Grammar check via LanguageTool public API
+// Grammar check via LanguageTool (env-configurable)
 async function languageToolCheck(text) {
   try {
-    const res = await fetch('https://api.languagetool.org/v2/check', {
+    const res = await fetch(`${LT_API_URL}/check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ text, language: 'en-US' })
@@ -107,7 +112,7 @@ async function languageToolCheck(text) {
 }
 
 // Glossary extraction
-async function extractGlossary(text, apiKey) {
+async function extractGlossary(text, apiKey){
   const heuristic = () => {
     const terms = Array.from(new Set((text.match(/\b([A-Z][a-zA-Z]{2,})\b/g) || [])))
     return terms.slice(0, 10).map(t => ({ term: t, definition: 'Important term detected from context.' }))
@@ -333,7 +338,10 @@ function App() {
   const [theme, setTheme] = useState(() => loadFromStorage('pp_theme', 'dark'))
   const [notes, setNotes] = useState(() => loadFromStorage('pp_notes', []))
   const [activeId, setActiveId] = useState(() => loadFromStorage('pp_active', null))
-  const [apiKey, setApiKey] = useState(() => loadFromStorage('pp_openai', ''))
+  const ENV_OPENAI = import.meta?.env?.VITE_OPENAI_API_KEY || ''
+  const [apiKey, setApiKey] = useState(() => loadFromStorage('pp_openai', ENV_OPENAI))
+  const hasStoredApiKey = useMemo(() => !!loadFromStorage('pp_openai', ''), [])
+  const usingEnvApiKey = !hasStoredApiKey && !!ENV_OPENAI
   const [search, setSearch] = useState('')
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [saveStatus, setSaveStatus] = useState('saved') // 'saving', 'saved', 'error'
@@ -343,6 +351,13 @@ function App() {
   const [editorHtml, setEditorHtml] = useState(activeNote?.html || '')
   const [glossary, setGlossary] = useState([])
   const [grammarMatches, setGrammarMatches] = useState([])
+  
+  function clearStoredApiKey() {
+    try {
+      localStorage.removeItem('pp_openai')
+    } catch {}
+    setApiKey(ENV_OPENAI)
+  }
 
   // Auto-save with status indication
   useEffect(() => { 
@@ -393,7 +408,10 @@ function App() {
   }, [activeId])
   
   useEffect(() => { 
-    saveToStorage('pp_openai', apiKey) 
+    // Persist only user-provided keys; do not save the .env key value
+    if (apiKey && apiKey !== ENV_OPENAI) {
+      saveToStorage('pp_openai', apiKey)
+    }
   }, [apiKey])
   
   useEffect(() => { 
@@ -409,8 +427,8 @@ function App() {
     setNotes(prev => prev.map(n => n.id===activeId ? { ...n, ...partial, updatedAt: Date.now() } : n))
   }
 
-  function exec(cmd, val=null) {
-    document.execCommand(cmd, false, val)
+  function exec(cmd, val=null){
+    document.execCommand(cmd, false, val)   
     setTimeout(()=> setEditorHtml(document.querySelector('.editor-area')?.innerHTML || ''), 0)
   }
   
@@ -668,12 +686,27 @@ function App() {
           <div className="settings">
             <div className="settings-group">
               <label>OpenAI API Key (optional)</label>
-              <input 
-                type="password"
-                placeholder="sk-..." 
-                value={apiKey} 
-                onChange={e=>setApiKey(e.target.value)} 
-              />
+              {usingEnvApiKey ? (
+                <input
+                  type="password"
+                  placeholder="Using .env VITE_OPENAI_API_KEY"
+                  value={''}
+                  readOnly
+                  disabled
+                />
+              ) : (
+                <input 
+                  type="password"
+                  placeholder="sk-..." 
+                  value={apiKey} 
+                  onChange={e=>setApiKey(e.target.value)} 
+                />
+              )}
+              {!usingEnvApiKey && hasStoredApiKey && (
+                <div className="data-controls" style={{ marginTop: '0.5rem' }}>
+                  <button className="import-btn" onClick={clearStoredApiKey}>Clear saved key (use .env)</button>
+                </div>
+              )}
             </div>
             <div className="settings-group">
               <label>Data Management</label>
