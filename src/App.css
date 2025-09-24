@@ -269,6 +269,8 @@ body {
   backdrop-filter: blur(20px);
   animation: slideInLeft 0.6s ease-out;
   transition: var(--transition);
+  /* Allow inner flex children to shrink and scroll */
+  min-height: 0;
 }
 
 .sidebar.collapsed {
@@ -279,7 +281,9 @@ body {
 .notes-list {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  /* Take remaining space and allow child to scroll */
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -553,6 +557,8 @@ body {
   border-top: 1px solid var(--border);
   background: var(--panel);
   animation: fadeIn 0.8s ease-out 0.4s both;
+  /* Do not consume flexible height */
+  flex: 0 0 auto;
 }
 
 .settings-group {
